@@ -72,57 +72,52 @@ function buildStressPhrase() {
   )} to ${randomChoice(currency)}; ${randomChoice(endings)}`;
 }
 
-const DEFAULT_DIALOGUE_SCRIPT = `1.
+const DEFAULT_DIALOGUE_SCRIPT = `# Dada dialogue sample (TTS script format)
+# Format: [SPEAKER=Name] line text
 
-EYE: The teacup has resigned.
-MOUTH: Then appoint the umbrella.
-EAR: It only speaks in buttons.
-NOSE: Buttons are reliable philosophers.
-EYE: Who moved the staircase into the soup?
-MOUTH: The violin, at dawn.
-EAR: I object in lowercase.
-NOSE: Objections must wear feathers.
-EYE: Then let the window apologize.
-MOUTH: Too late — the window has become Thursday.
+[SPEAKER=EYE] The teacup has resigned.
+[SPEAKER=MOUTH] Then appoint the umbrella.
+[SPEAKER=EAR] It only speaks in buttons.
+[SPEAKER=NOSE] Buttons are reliable philosophers.
+[SPEAKER=EYE] Who moved the staircase into the soup?
+[SPEAKER=MOUTH] The violin, at dawn.
+[SPEAKER=EAR] I object in lowercase.
+[SPEAKER=NOSE] Objections must wear feathers.
+[SPEAKER=EYE] Then let the window apologize.
+[SPEAKER=MOUTH] Too late — the window has become Thursday.
 
-2.
+[SPEAKER=EYEBROW] I have swallowed a map.
+[SPEAKER=MOUTH] Which country was delicious?
+[SPEAKER=EYE] The one with three moons and no chairs.
+[SPEAKER=EAR] Chairs are only frozen arguments.
+[SPEAKER=NOSE] I prefer a ladder with opinions.
+[SPEAKER=EYEBROW] Then climb the orchestra.
+[SPEAKER=MOUTH] I already mailed it to a fish.
+[SPEAKER=EYE] Did the fish reply?
+[SPEAKER=EAR] Yes, in excellent dust.
+[SPEAKER=NOSE] Then we are formally introduced.
 
-EYEBROW: I have swallowed a map.
-MOUTH: Which country was delicious?
-EYE: The one with three moons and no chairs.
-EAR: Chairs are only frozen arguments.
-NOSE: I prefer a ladder with opinions.
-EYEBROW: Then climb the orchestra.
-MOUTH: I already mailed it to a fish.
-EYE: Did the fish reply?
-EAR: Yes, in excellent dust.
-NOSE: Then we are formally introduced.
+[SPEAKER=MOUTH] Good evening, ceiling.
+[SPEAKER=CEILING] I refuse to remain overhead.
+[SPEAKER=EYE] Sensible. The floor is overworked.
+[SPEAKER=EAR] Hush — the wallpaper is rehearsing.
+[SPEAKER=NOSE] For what performance?
+[SPEAKER=MOUTH] A duel between two teaspoons.
+[SPEAKER=CEILING] Who is judging?
+[SPEAKER=EYE] A lamp with aristocratic knees.
+[SPEAKER=EAR] Then the verdict will be circular.
+[SPEAKER=NOSE] As all honest furniture is.
 
-3.
-
-MOUTH: Good evening, ceiling.
-CEILING: I refuse to remain overhead.
-EYE: Sensible. The floor is overworked.
-EAR: Hush — the wallpaper is rehearsing.
-NOSE: For what performance?
-MOUTH: A duel between two teaspoons.
-CEILING: Who is judging?
-EYE: A lamp with aristocratic knees.
-EAR: Then the verdict will be circular.
-NOSE: As all honest furniture is.
-
-4.
-
-EYE: My hat has learned arithmetic.
-MOUTH: Hide it before it teaches the bread.
-EAR: Too late — the bread now counts backwards.
-NOSE: Backwards is the shortest route to Paris.
-EYE: Only if the moon signs the receipt.
-MOUTH: I left the receipt in a trumpet.
-EAR: Then the trumpet owns the moon.
-NOSE: Ownership is a temporary sneeze.
-EYE: Bless you, then.
-MOUTH: And also the chandelier.`;
+[SPEAKER=EYE] My hat has learned arithmetic.
+[SPEAKER=MOUTH] Hide it before it teaches the bread.
+[SPEAKER=EAR] Too late — the bread now counts backwards.
+[SPEAKER=NOSE] Backwards is the shortest route to Paris.
+[SPEAKER=EYE] Only if the moon signs the receipt.
+[SPEAKER=MOUTH] I left the receipt in a trumpet.
+[SPEAKER=EAR] Then the trumpet owns the moon.
+[SPEAKER=NOSE] Ownership is a temporary sneeze.
+[SPEAKER=EYE] Bless you, then.
+[SPEAKER=MOUTH] And also the chandelier.`;
 
 function loadRatings() {
   try {
@@ -162,11 +157,34 @@ function parseDialogueScript(script, voiceA, voiceB) {
   for (const rawLine of lines) {
     const line = rawLine.trim();
     if (!line) continue;
+    if (line.startsWith("#")) continue;
     if (/^\d+\.$/.test(line)) continue;
-    const match = line.match(/^([A-Z][A-Z0-9_-]{0,40})\s*:\s*(.+)$/i);
-    if (!match) continue;
-    const speaker = match[1].trim();
-    const text = match[2].trim();
+
+    let speaker = "";
+    let text = "";
+
+    // Preferred format: [SPEAKER=Name] text
+    const bracketMatch = line.match(/^\[(.*?)\]\s*(.+)$/);
+    if (bracketMatch) {
+      const attrs = bracketMatch[1].split("|").map((x) => x.trim());
+      text = bracketMatch[2].trim();
+      for (const attr of attrs) {
+        const kv = attr.match(/^([A-Z_]+)\s*=\s*(.+)$/i);
+        if (!kv) continue;
+        if (kv[1].toUpperCase() === "SPEAKER") {
+          speaker = kv[2].trim();
+        }
+      }
+    }
+
+    // Backward compatibility: SPEAKER: text
+    if (!speaker) {
+      const legacyMatch = line.match(/^([A-Z][A-Z0-9_-]{0,40})\s*:\s*(.+)$/i);
+      if (!legacyMatch) continue;
+      speaker = legacyMatch[1].trim();
+      text = legacyMatch[2].trim();
+    }
+
     if (!text) continue;
 
     if (!speakerOrder.has(speaker)) speakerOrder.set(speaker, speakerOrder.size);
@@ -186,6 +204,7 @@ export default function App() {
   const dialogueUrlsRef = useRef([]);
 
   const [status, setStatus] = useState("idle");
+  const [modelInitialized, setModelInitialized] = useState(false);
   const [text, setText] = useState("KittenTTS in browser with ONNX Runtime Web.");
   const [voice, setVoice] = useState("Bella");
   const [speed, setSpeed] = useState(1);
@@ -197,6 +216,7 @@ export default function App() {
   const [lastStats, setLastStats] = useState("");
   const [runtimeInfo, setRuntimeInfo] = useState("");
   const [debugInfo, setDebugInfo] = useState("");
+  const [conversionProgress, setConversionProgress] = useState("");
   const [trimTailSamples, setTrimTailSamples] = useState(5000);
   const [execMode, setExecMode] = useState("wasm");
   const [webgpuStatus, setWebgpuStatus] = useState("Not checked");
@@ -233,7 +253,9 @@ export default function App() {
 
       if (type === "ready") {
         setStatus("ready");
+        setModelInitialized(true);
         setError("");
+        setConversionProgress("");
         const inputs = Array.isArray(payload?.inputs) ? payload.inputs.join(", ") : "unknown";
         const outputs = Array.isArray(payload?.outputs) ? payload.outputs.join(", ") : "unknown";
         const provider = Array.isArray(payload?.providers) ? payload.providers.join(", ") : "unknown";
@@ -263,18 +285,44 @@ export default function App() {
         }
       }
 
+      if (type === "progress") {
+        const msg = payload?.message || payload?.stage || "Working";
+        setConversionProgress(msg);
+        return;
+      }
+
       if (type === "error") {
         const requestId = payload?.requestId;
         if (requestId && pendingRef.current.has(requestId)) {
           const resolve = pendingRef.current.get(requestId);
           pendingRef.current.delete(requestId);
           resolve({ error: String(payload?.message || payload || "Unknown error") });
+          setConversionProgress("");
           return;
         }
-        setError(typeof payload === "string" ? payload : JSON.stringify(payload));
+        setError(typeof payload === "string" ? payload : String(payload?.message || JSON.stringify(payload)));
+        setConversionProgress("");
+        setModelInitialized(false);
         setStatus("ready");
       }
     };
+
+    const initialProviders = execMode === "webgpu" ? ["webgpu"] : execMode === "auto" ? ["webgpu", "wasm"] : ["wasm"];
+    setStatus("loading");
+    setModelInitialized(false);
+    setConversionProgress("Loading model");
+    worker.postMessage({
+      type: "init",
+      payload: {
+        modelDir,
+        configUrl,
+        providers: initialProviders,
+        configOverrides: {
+          trimTailSamples,
+          phonemizerMode: "espeak_js"
+        }
+      }
+    });
 
     return () => {
       worker.terminate();
@@ -283,7 +331,7 @@ export default function App() {
       for (const url of shootoutUrlsRef.current) URL.revokeObjectURL(url);
       for (const url of dialogueUrlsRef.current) URL.revokeObjectURL(url);
     };
-  }, [voice, dialogueVoiceA, dialogueVoiceB]);
+  }, []);
 
   async function checkWebgpuReadiness() {
     if (typeof window === "undefined") {
@@ -320,7 +368,9 @@ export default function App() {
   function initModel() {
     if (!workerRef.current) return;
     setStatus("loading");
+    setModelInitialized(false);
     setError("");
+    setConversionProgress("Loading model");
     const providers = execMode === "webgpu" ? ["webgpu"] : execMode === "auto" ? ["webgpu", "wasm"] : ["wasm"];
     workerRef.current.postMessage({
       type: "init",
@@ -369,13 +419,17 @@ export default function App() {
   }
 
   async function generateMain() {
-    if (!workerRef.current || !canGenerate) return;
+    if (!workerRef.current || !canGenerate || !modelInitialized) {
+      setError("Initialize Model first.");
+      return;
+    }
     setStatus("generating");
     setError("");
     const requestId = `main-${Date.now()}`;
     const result = await requestGenerate({ textValue: text, voiceValue: voice, speedValue: speed, requestId });
     if (result?.error) {
       setError(result.error);
+      setConversionProgress("");
       setStatus("ready");
       return;
     }
@@ -386,11 +440,15 @@ export default function App() {
     audioUrlRef.current = url;
     setAudioUrl(url);
     setLastStats(`${result.samples} samples across ${result.chunks} chunk(s)`);
+    setConversionProgress("");
     setStatus("ready");
   }
 
   async function runVoiceShootout() {
-    if (!workerRef.current || !canGenerate) return;
+    if (!workerRef.current || !canGenerate || !modelInitialized) {
+      setError("Initialize Model first.");
+      return;
+    }
     setShootoutLoading(true);
     setStatus("generating");
     setError("");
@@ -407,6 +465,7 @@ export default function App() {
       const result = await requestGenerate({ textValue: text, voiceValue: v, speedValue: speed, requestId });
       if (result?.error) {
         setError(`Shootout failed on ${v}: ${result.error}`);
+        setConversionProgress("");
         break;
       }
       const blob = new Blob([result.wavBuffer], { type: "audio/wav" });
@@ -423,12 +482,16 @@ export default function App() {
     }
 
     setShootoutProgress("");
+    setConversionProgress("");
     setShootoutLoading(false);
     setStatus("ready");
   }
 
   async function runDialogueScript() {
-    if (!workerRef.current || !canGenerate) return;
+    if (!workerRef.current || !canGenerate || !modelInitialized) {
+      setError("Initialize Model first.");
+      return;
+    }
     const turns = parseDialogueScript(dialogueScript, dialogueVoiceA, dialogueVoiceB);
     if (turns.length === 0) {
       setError("No valid dialogue lines found. Use format: SPEAKER: text");
@@ -457,6 +520,7 @@ export default function App() {
       });
       if (result?.error) {
         setError(`Dialogue failed at line ${i + 1}: ${result.error}`);
+        setConversionProgress("");
         break;
       }
       const blob = new Blob([result.wavBuffer], { type: "audio/wav" });
@@ -474,6 +538,7 @@ export default function App() {
     }
 
     setDialogueProgress("");
+    setConversionProgress("");
     setDialogueLoading(false);
     setStatus("ready");
   }
@@ -485,6 +550,7 @@ export default function App() {
         <h1 className="mt-2 text-3xl font-bold text-white">KittenTTS 0.8 ONNX</h1>
         <p className="mt-2 text-sm text-slate-300">Steps: 1) Initialize Model 2) Choose or randomize test text 3) Generate</p>
         <p className="mt-1 text-slate-300">Status: {status}</p>
+        {conversionProgress ? <p className="mt-1 text-xs text-cyan-200">Progress: {conversionProgress}</p> : null}
       </div>
 
       <section className="space-y-4 rounded-2xl border border-slate-700 bg-slate-900/70 p-5">
@@ -625,7 +691,7 @@ export default function App() {
 
           <button
             onClick={generateMain}
-            disabled={!canGenerate || status === "generating"}
+            disabled={!canGenerate || !modelInitialized || status === "generating"}
             className="rounded-xl bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-cyan-200 disabled:opacity-60"
           >
             {status === "generating" && !shootoutLoading ? "Generating..." : "Generate Audio"}
@@ -661,7 +727,7 @@ export default function App() {
 
           <button
             onClick={runVoiceShootout}
-            disabled={!canGenerate || shootoutLoading}
+            disabled={!canGenerate || !modelInitialized || shootoutLoading}
             className="rounded-xl border border-emerald-400/70 px-4 py-2 text-sm font-semibold text-emerald-200 hover:border-emerald-300 disabled:opacity-60"
           >
             {shootoutLoading ? "Running Shootout..." : "Run Voice Shootout"}
@@ -752,7 +818,7 @@ export default function App() {
         <div className="flex flex-wrap gap-3">
           <button
             onClick={runDialogueScript}
-            disabled={!canGenerate || dialogueLoading}
+            disabled={!canGenerate || !modelInitialized || dialogueLoading}
             className="rounded-xl border border-fuchsia-400/70 px-4 py-2 text-sm font-semibold text-fuchsia-200 hover:border-fuchsia-300 disabled:opacity-60"
           >
             {dialogueLoading ? "Rendering Dialogue..." : "Generate Dialogue Clips"}

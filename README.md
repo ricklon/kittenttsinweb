@@ -89,6 +89,32 @@ Use Netron to inspect model I/O names if generation errors mention missing tenso
 - WAV encoder: [src/lib/wav.js](/home/ra/Projects/kittenttsinweb/src/lib/wav.js)
 - UI: [src/App.jsx](/home/ra/Projects/kittenttsinweb/src/App.jsx)
 
+## Dialogue script format
+
+The Dialogue Panel accepts a structured script format:
+
+```txt
+[SPEAKER=EYE] The teacup has resigned.
+[SPEAKER=MOUTH] Then appoint the umbrella.
+[SPEAKER=EAR] It only speaks in buttons.
+```
+
+Rules:
+- One line = one utterance
+- `SPEAKER` is required in the bracket format
+- Lines starting with `#` are treated as comments
+- Blank lines are ignored
+
+Backward compatibility:
+- Legacy lines like `EYE: The teacup has resigned.` are still supported.
+
+Voice mapping behavior:
+- Speakers are mapped by first appearance:
+  - speaker #1 -> Voice A
+  - speaker #2 -> Voice B
+  - speaker #3 -> Voice A
+  - speaker #4 -> Voice B
+
 Important:
 - Input names are auto-detected with config overrides (supports `speaker_embedding` or `style` style inputs).
 - Audio is sanitized (NaN-safe + peak normalization) before WAV encoding.
