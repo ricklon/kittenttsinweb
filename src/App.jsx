@@ -230,6 +230,8 @@ export default function App() {
   const [dialogueVoiceA, setDialogueVoiceA] = useState("expr-voice-2-f");
   const [dialogueVoiceB, setDialogueVoiceB] = useState("expr-voice-2-m");
   const [dialogueClips, setDialogueClips] = useState([]);
+  const [dialogueTotalLines, setDialogueTotalLines] = useState(0);
+  const [dialogueCompletedLines, setDialogueCompletedLines] = useState(0);
 
   const [ratings, setRatings] = useState(() => loadRatings());
 
@@ -243,6 +245,11 @@ export default function App() {
     const avg = ratings.reduce((a, b) => a + b.score, 0) / ratings.length;
     return `${ratings.length} ratings, avg ${avg.toFixed(2)}/5`;
   }, [ratings]);
+
+  const dialoguePreviewTurns = useMemo(
+    () => parseDialogueScript(dialogueScript, dialogueVoiceA, dialogueVoiceB),
+    [dialogueScript, dialogueVoiceA, dialogueVoiceB]
+  );
 
   useEffect(() => {
     const worker = new Worker(new URL("./workers/tts.worker.js", import.meta.url), { type: "module" });
@@ -492,7 +499,7 @@ export default function App() {
       setError("Initialize Model first.");
       return;
     }
-    const turns = parseDialogueScript(dialogueScript, dialogueVoiceA, dialogueVoiceB);
+    const turns = dialoguePreviewTurns;
     if (turns.length === 0) {
       setError("No valid dialogue lines found. Use format: SPEAKER: text");
       return;
@@ -501,7 +508,9 @@ export default function App() {
     setDialogueLoading(true);
     setStatus("generating");
     setError("");
-    setDialogueProgress("");
+    setDialogueProgress("Starting dialogue render");
+    setDialogueTotalLines(turns.length);
+    setDialogueCompletedLines(0);
 
     for (const url of dialogueUrlsRef.current) URL.revokeObjectURL(url);
     dialogueUrlsRef.current = [];
@@ -528,6 +537,7 @@ export default function App() {
       dialogueUrlsRef.current.push(url);
       clips.push({
         id: requestId,
+        lineNumber: i + 1,
         speaker: turn.speaker,
         text: turn.text,
         voice: turn.voice,
@@ -535,9 +545,10 @@ export default function App() {
         samples: result.samples
       });
       setDialogueClips([...clips]);
+      setDialogueCompletedLines(i + 1);
     }
 
-    setDialogueProgress("");
+    setDialogueProgress(`Done: rendered ${clips.length}/${turns.length} lines`);
     setConversionProgress("");
     setDialogueLoading(false);
     setStatus("ready");
@@ -772,6 +783,26 @@ export default function App() {
         <p className="text-xs text-slate-400">
           Author script lines as <code>SPEAKER: text</code>. Speakers auto-map to Voice A/B in encounter order.
         </p>
+        <div className="rounded-xl border border-slate-700 bg-slate-950/60 p-3">
+          <p className="text-xs text-slate-300">
+            Parsed lines: <strong>{dialoguePreviewTurns.length}</strong>
+          </p>
+          <p className="mt-1 text-xs text-slate-300">
+            Render progress: <strong>{dialogueCompletedLines}</strong>/<strong>{dialogueTotalLines || dialoguePreviewTurns.length}</strong>
+          </p>
+          <div className="mt-2 h-2 w-full overflow-hidden rounded bg-slate-800">
+            <div
+              className="h-full bg-fuchsia-400 transition-all"
+              style={{
+                width: `${
+                  (dialogueTotalLines || dialoguePreviewTurns.length) > 0
+                    ? (dialogueCompletedLines / (dialogueTotalLines || dialoguePreviewTurns.length)) * 100
+                    : 0
+                }%`
+              }}
+            />
+          </div>
+        </div>
 
         <div className="grid gap-4 md:grid-cols-2">
           <label className="block">
@@ -831,7 +862,11 @@ export default function App() {
           </button>
         </div>
 
-        {dialogueProgress ? <p className="text-xs text-slate-300">{dialogueProgress}</p> : null}
+        {dialogueProgress ? (
+          <p className="text-xs text-fuchsia-200">
+            {dialogueLoading ? "Rendering..." : "Status:"} {dialogueProgress}
+          </p>
+        ) : null}
 
         {dialogueClips.length === 0 ? (
           <p className="text-sm text-slate-300">No dialogue clips yet.</p>
@@ -840,7 +875,7 @@ export default function App() {
             {dialogueClips.map((clip, idx) => (
               <div key={clip.id} className="rounded-xl border border-slate-700 bg-slate-950/70 p-3">
                 <p className="text-sm text-slate-200">
-                  {idx + 1}. <strong>{clip.speaker}</strong> {"->"} {voiceLabel(clip.voice)}
+                  Line {clip.lineNumber || idx + 1}: <strong>{clip.speaker}</strong> {"->"} {voiceLabel(clip.voice)}
                 </p>
                 <p className="mb-2 text-xs text-slate-400">{clip.text}</p>
                 <audio controls className="w-full" src={clip.url} />
