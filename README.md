@@ -11,6 +11,7 @@ This project is configured for a **100% in-browser** KittenTTS flow:
 
 ```bash
 npm install
+./scripts/fetch-models.sh
 npm run dev
 ```
 
@@ -35,6 +36,16 @@ Important:
   - `Phonemizer Mode`: `espeak_js` vs `simple_en`
   - `Tail Trim`: trims end samples to reduce trailing artifacts
   - Re-click `Initialize Model` after changing either control.
+
+## One-command model download
+
+```bash
+./scripts/fetch-models.sh
+```
+
+This fetches:
+- `public/models/kitten-tts-nano-0.8-int8/model.onnx`
+- `public/models/kitten-tts-nano-0.8-int8/voices.npz`
 
 ## Browser config
 
