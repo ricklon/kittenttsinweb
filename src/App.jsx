@@ -72,6 +72,58 @@ function buildStressPhrase() {
   )} to ${randomChoice(currency)}; ${randomChoice(endings)}`;
 }
 
+const DEFAULT_DIALOGUE_SCRIPT = `1.
+
+EYE: The teacup has resigned.
+MOUTH: Then appoint the umbrella.
+EAR: It only speaks in buttons.
+NOSE: Buttons are reliable philosophers.
+EYE: Who moved the staircase into the soup?
+MOUTH: The violin, at dawn.
+EAR: I object in lowercase.
+NOSE: Objections must wear feathers.
+EYE: Then let the window apologize.
+MOUTH: Too late — the window has become Thursday.
+
+2.
+
+EYEBROW: I have swallowed a map.
+MOUTH: Which country was delicious?
+EYE: The one with three moons and no chairs.
+EAR: Chairs are only frozen arguments.
+NOSE: I prefer a ladder with opinions.
+EYEBROW: Then climb the orchestra.
+MOUTH: I already mailed it to a fish.
+EYE: Did the fish reply?
+EAR: Yes, in excellent dust.
+NOSE: Then we are formally introduced.
+
+3.
+
+MOUTH: Good evening, ceiling.
+CEILING: I refuse to remain overhead.
+EYE: Sensible. The floor is overworked.
+EAR: Hush — the wallpaper is rehearsing.
+NOSE: For what performance?
+MOUTH: A duel between two teaspoons.
+CEILING: Who is judging?
+EYE: A lamp with aristocratic knees.
+EAR: Then the verdict will be circular.
+NOSE: As all honest furniture is.
+
+4.
+
+EYE: My hat has learned arithmetic.
+MOUTH: Hide it before it teaches the bread.
+EAR: Too late — the bread now counts backwards.
+NOSE: Backwards is the shortest route to Paris.
+EYE: Only if the moon signs the receipt.
+MOUTH: I left the receipt in a trumpet.
+EAR: Then the trumpet owns the moon.
+NOSE: Ownership is a temporary sneeze.
+EYE: Bless you, then.
+MOUTH: And also the chandelier.`;
+
 function loadRatings() {
   try {
     const raw = localStorage.getItem(RATINGS_KEY);
@@ -102,11 +154,36 @@ function sortVoicesStable(list) {
   });
 }
 
+function parseDialogueScript(script, voiceA, voiceB) {
+  const lines = String(script || "").split("\n");
+  const speakerOrder = new Map();
+  const turns = [];
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (/^\d+\.$/.test(line)) continue;
+    const match = line.match(/^([A-Z][A-Z0-9_-]{0,40})\s*:\s*(.+)$/i);
+    if (!match) continue;
+    const speaker = match[1].trim();
+    const text = match[2].trim();
+    if (!text) continue;
+
+    if (!speakerOrder.has(speaker)) speakerOrder.set(speaker, speakerOrder.size);
+    const idx = speakerOrder.get(speaker);
+    const mappedVoice = idx % 2 === 0 ? voiceA : voiceB;
+    turns.push({ speaker, text, voice: mappedVoice });
+  }
+
+  return turns;
+}
+
 export default function App() {
   const workerRef = useRef(null);
   const pendingRef = useRef(new Map());
   const audioUrlRef = useRef("");
   const shootoutUrlsRef = useRef([]);
+  const dialogueUrlsRef = useRef([]);
 
   const [status, setStatus] = useState("idle");
   const [text, setText] = useState("KittenTTS in browser with ONNX Runtime Web.");
@@ -127,10 +204,19 @@ export default function App() {
   const [shootoutLoading, setShootoutLoading] = useState(false);
   const [shootoutProgress, setShootoutProgress] = useState("");
   const [shootoutClips, setShootoutClips] = useState([]);
+  const [dialogueLoading, setDialogueLoading] = useState(false);
+  const [dialogueProgress, setDialogueProgress] = useState("");
+  const [dialogueScript, setDialogueScript] = useState(DEFAULT_DIALOGUE_SCRIPT);
+  const [dialogueVoiceA, setDialogueVoiceA] = useState("expr-voice-2-f");
+  const [dialogueVoiceB, setDialogueVoiceB] = useState("expr-voice-2-m");
+  const [dialogueClips, setDialogueClips] = useState([]);
 
   const [ratings, setRatings] = useState(() => loadRatings());
 
-  const canGenerate = useMemo(() => status === "ready" && text.trim().length > 0 && !shootoutLoading, [status, text, shootoutLoading]);
+  const canGenerate = useMemo(
+    () => status === "ready" && text.trim().length > 0 && !shootoutLoading && !dialogueLoading,
+    [status, text, shootoutLoading, dialogueLoading]
+  );
 
   const ratingSummary = useMemo(() => {
     if (!ratings.length) return "No ratings yet";
@@ -156,6 +242,8 @@ export default function App() {
           const sortedVoices = sortVoicesStable(payload.voices);
           setVoices(sortedVoices);
           if (!sortedVoices.includes(voice)) setVoice(sortedVoices[0]);
+          if (!sortedVoices.includes(dialogueVoiceA)) setDialogueVoiceA(sortedVoices[0]);
+          if (!sortedVoices.includes(dialogueVoiceB)) setDialogueVoiceB(sortedVoices[1] || sortedVoices[0]);
         }
         return;
       }
@@ -193,8 +281,9 @@ export default function App() {
       pendingRef.current.clear();
       if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
       for (const url of shootoutUrlsRef.current) URL.revokeObjectURL(url);
+      for (const url of dialogueUrlsRef.current) URL.revokeObjectURL(url);
     };
-  }, [voice]);
+  }, [voice, dialogueVoiceA, dialogueVoiceB]);
 
   async function checkWebgpuReadiness() {
     if (typeof window === "undefined") {
@@ -335,6 +424,57 @@ export default function App() {
 
     setShootoutProgress("");
     setShootoutLoading(false);
+    setStatus("ready");
+  }
+
+  async function runDialogueScript() {
+    if (!workerRef.current || !canGenerate) return;
+    const turns = parseDialogueScript(dialogueScript, dialogueVoiceA, dialogueVoiceB);
+    if (turns.length === 0) {
+      setError("No valid dialogue lines found. Use format: SPEAKER: text");
+      return;
+    }
+
+    setDialogueLoading(true);
+    setStatus("generating");
+    setError("");
+    setDialogueProgress("");
+
+    for (const url of dialogueUrlsRef.current) URL.revokeObjectURL(url);
+    dialogueUrlsRef.current = [];
+    setDialogueClips([]);
+
+    const clips = [];
+    for (let i = 0; i < turns.length; i += 1) {
+      const turn = turns[i];
+      setDialogueProgress(`Rendering dialogue ${i + 1}/${turns.length}: ${turn.speaker}`);
+      const requestId = `dialogue-${i}-${Date.now()}`;
+      const result = await requestGenerate({
+        textValue: turn.text,
+        voiceValue: turn.voice,
+        speedValue: speed,
+        requestId
+      });
+      if (result?.error) {
+        setError(`Dialogue failed at line ${i + 1}: ${result.error}`);
+        break;
+      }
+      const blob = new Blob([result.wavBuffer], { type: "audio/wav" });
+      const url = URL.createObjectURL(blob);
+      dialogueUrlsRef.current.push(url);
+      clips.push({
+        id: requestId,
+        speaker: turn.speaker,
+        text: turn.text,
+        voice: turn.voice,
+        url,
+        samples: result.samples
+      });
+      setDialogueClips([...clips]);
+    }
+
+    setDialogueProgress("");
+    setDialogueLoading(false);
     setStatus("ready");
   }
 
@@ -559,6 +699,89 @@ export default function App() {
             </div>
           )}
         </div>
+      </section>
+
+      <section className="mt-4 space-y-4 rounded-2xl border border-fuchsia-400/30 bg-slate-900/70 p-5">
+        <h3 className="text-lg font-semibold text-white">Dialogue Panel</h3>
+        <p className="text-xs text-slate-400">
+          Author script lines as <code>SPEAKER: text</code>. Speakers auto-map to Voice A/B in encounter order.
+        </p>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="block">
+            <span className="mb-2 block text-sm text-slate-200">Voice A</span>
+            <select
+              value={dialogueVoiceA}
+              onChange={(e) => setDialogueVoiceA(e.target.value)}
+              className="w-full rounded-xl border border-slate-600 bg-slate-950 p-3 text-slate-100"
+            >
+              {voices.map((v) => (
+                <option key={`a-${v}`} value={v}>
+                  {voiceLabel(v)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="mb-2 block text-sm text-slate-200">Voice B</span>
+            <select
+              value={dialogueVoiceB}
+              onChange={(e) => setDialogueVoiceB(e.target.value)}
+              className="w-full rounded-xl border border-slate-600 bg-slate-950 p-3 text-slate-100"
+            >
+              {voices.map((v) => (
+                <option key={`b-${v}`} value={v}>
+                  {voiceLabel(v)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <label className="block">
+          <span className="mb-2 block text-sm text-slate-200">Dialogue Script</span>
+          <textarea
+            value={dialogueScript}
+            onChange={(e) => setDialogueScript(e.target.value)}
+            rows={14}
+            className="w-full rounded-xl border border-slate-600 bg-slate-950 p-3 text-slate-100 outline-none focus:border-fuchsia-300"
+          />
+        </label>
+
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={runDialogueScript}
+            disabled={!canGenerate || dialogueLoading}
+            className="rounded-xl border border-fuchsia-400/70 px-4 py-2 text-sm font-semibold text-fuchsia-200 hover:border-fuchsia-300 disabled:opacity-60"
+          >
+            {dialogueLoading ? "Rendering Dialogue..." : "Generate Dialogue Clips"}
+          </button>
+          <button
+            onClick={() => setDialogueScript(DEFAULT_DIALOGUE_SCRIPT)}
+            className="rounded-xl border border-slate-500 px-4 py-2 text-sm text-slate-200 hover:border-cyan-300"
+          >
+            Reset Default Script
+          </button>
+        </div>
+
+        {dialogueProgress ? <p className="text-xs text-slate-300">{dialogueProgress}</p> : null}
+
+        {dialogueClips.length === 0 ? (
+          <p className="text-sm text-slate-300">No dialogue clips yet.</p>
+        ) : (
+          <div className="grid gap-3">
+            {dialogueClips.map((clip, idx) => (
+              <div key={clip.id} className="rounded-xl border border-slate-700 bg-slate-950/70 p-3">
+                <p className="text-sm text-slate-200">
+                  {idx + 1}. <strong>{clip.speaker}</strong> {"->"} {voiceLabel(clip.voice)}
+                </p>
+                <p className="mb-2 text-xs text-slate-400">{clip.text}</p>
+                <audio controls className="w-full" src={clip.url} />
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="mt-4 space-y-3 rounded-2xl border border-slate-700 bg-slate-900/70 p-5">
