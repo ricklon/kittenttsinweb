@@ -230,6 +230,10 @@ export default function App() {
   const [dialogueVoiceA, setDialogueVoiceA] = useState("expr-voice-2-f");
   const [dialogueVoiceB, setDialogueVoiceB] = useState("expr-voice-2-m");
   const [dialogueClips, setDialogueClips] = useState([]);
+  const [dialoguePauseMs, setDialoguePauseMs] = useState(250);
+  const [sceneCompiling, setSceneCompiling] = useState(false);
+  const [sceneAudioUrl, setSceneAudioUrl] = useState("");
+  const sceneAudioUrlRef = useRef("");
   const [dialogueTotalLines, setDialogueTotalLines] = useState(0);
   const [dialogueCompletedLines, setDialogueCompletedLines] = useState(0);
 
@@ -337,6 +341,7 @@ export default function App() {
       if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
       for (const url of shootoutUrlsRef.current) URL.revokeObjectURL(url);
       for (const url of dialogueUrlsRef.current) URL.revokeObjectURL(url);
+      if (sceneAudioUrlRef.current) URL.revokeObjectURL(sceneAudioUrlRef.current);
     };
   }, []);
 
@@ -515,6 +520,11 @@ export default function App() {
     for (const url of dialogueUrlsRef.current) URL.revokeObjectURL(url);
     dialogueUrlsRef.current = [];
     setDialogueClips([]);
+    if (sceneAudioUrlRef.current) {
+      URL.revokeObjectURL(sceneAudioUrlRef.current);
+      sceneAudioUrlRef.current = "";
+      setSceneAudioUrl("");
+    }
 
     const clips = [];
     for (let i = 0; i < turns.length; i += 1) {
@@ -548,10 +558,64 @@ export default function App() {
       setDialogueCompletedLines(i + 1);
     }
 
-    setDialogueProgress(`Done: rendered ${clips.length}/${turns.length} lines`);
+    if (clips.length > 0) {
+      await compileSceneAudioFromClips(clips);
+      setDialogueProgress(`Scene ready: ${clips.length}/${turns.length} lines`);
+    } else {
+      setDialogueProgress(`Done: rendered ${clips.length}/${turns.length} lines`);
+    }
     setConversionProgress("");
     setDialogueLoading(false);
     setStatus("ready");
+  }
+
+  async function compileSceneAudioFromClips(clipsInput) {
+    const clips = clipsInput || dialogueClips;
+    if (!clips || clips.length === 0) return;
+    setSceneCompiling(true);
+    setError("");
+    setDialogueProgress("Compiling scene audio...");
+
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      const ctx = new Ctx();
+      const sampleRate = 24000;
+      const pauseSamples = Math.max(0, Math.floor((dialoguePauseMs / 1000) * sampleRate));
+      const rendered = [];
+
+      for (let i = 0; i < clips.length; i += 1) {
+        const clip = clips[i];
+        const res = await fetch(clip.url);
+        const wav = await res.arrayBuffer();
+        const audioBuffer = await ctx.decodeAudioData(wav.slice(0));
+        const channel = audioBuffer.getChannelData(0);
+        rendered.push(new Float32Array(channel));
+        if (i < clips.length - 1 && pauseSamples > 0) {
+          rendered.push(new Float32Array(pauseSamples));
+        }
+        setDialogueProgress(`Compiling scene ${i + 1}/${clips.length}`);
+      }
+
+      const total = rendered.reduce((n, arr) => n + arr.length, 0);
+      const merged = new Float32Array(total);
+      let offset = 0;
+      for (const arr of rendered) {
+        merged.set(arr, offset);
+        offset += arr.length;
+      }
+
+      const wavBlob = encodeWavFromFloat32(merged, sampleRate, 1);
+      const url = URL.createObjectURL(wavBlob);
+      if (sceneAudioUrlRef.current) URL.revokeObjectURL(sceneAudioUrlRef.current);
+      sceneAudioUrlRef.current = url;
+      setSceneAudioUrl(url);
+      setDialogueProgress(`Scene compiled: ${clips.length} lines, pause ${dialoguePauseMs}ms`);
+      await ctx.close();
+    } catch (err) {
+      setError(`Scene compile failed: ${String(err?.message || err)}`);
+    } finally {
+      setSceneCompiling(false);
+    }
   }
 
   return (
@@ -585,6 +649,19 @@ export default function App() {
             />
           </label>
         </div>
+
+        <label className="block">
+          <span className="mb-2 block text-sm text-slate-200">Pause Between Lines: {dialoguePauseMs}ms</span>
+          <input
+            type="range"
+            min="0"
+            max="1200"
+            step="50"
+            value={dialoguePauseMs}
+            onChange={(e) => setDialoguePauseMs(Number(e.target.value))}
+            className="w-full accent-fuchsia-300"
+          />
+        </label>
 
         <div className="grid gap-4 md:grid-cols-2">
           <label className="block">
@@ -852,7 +929,7 @@ export default function App() {
             disabled={!canGenerate || !modelInitialized || dialogueLoading}
             className="rounded-xl border border-fuchsia-400/70 px-4 py-2 text-sm font-semibold text-fuchsia-200 hover:border-fuchsia-300 disabled:opacity-60"
           >
-            {dialogueLoading ? "Rendering Dialogue..." : "Generate Dialogue Clips"}
+            {dialogueLoading || sceneCompiling ? "Generating Scene..." : "Generate Scene Audio"}
           </button>
           <button
             onClick={() => setDialogueScript(DEFAULT_DIALOGUE_SCRIPT)}
@@ -868,19 +945,15 @@ export default function App() {
           </p>
         ) : null}
 
-        {dialogueClips.length === 0 ? (
-          <p className="text-sm text-slate-300">No dialogue clips yet.</p>
-        ) : (
-          <div className="grid gap-3">
-            {dialogueClips.map((clip, idx) => (
-              <div key={clip.id} className="rounded-xl border border-slate-700 bg-slate-950/70 p-3">
-                <p className="text-sm text-slate-200">
-                  Line {clip.lineNumber || idx + 1}: <strong>{clip.speaker}</strong> {"->"} {voiceLabel(clip.voice)}
-                </p>
-                <p className="mb-2 text-xs text-slate-400">{clip.text}</p>
-                <audio controls className="w-full" src={clip.url} />
-              </div>
-            ))}
+        {dialogueClips.length === 0 ? <p className="text-sm text-slate-300">No scene generated yet.</p> : null}
+
+        {sceneAudioUrl && (
+          <div className="rounded-xl border border-amber-400/40 bg-slate-950/70 p-3">
+            <p className="mb-2 text-sm text-amber-200">Compiled Scene Output</p>
+            <audio controls className="w-full" src={sceneAudioUrl} />
+            <a className="mt-2 inline-block text-sm text-amber-300 underline" href={sceneAudioUrl} download="scene.wav">
+              Download Scene WAV
+            </a>
           </div>
         )}
       </section>
