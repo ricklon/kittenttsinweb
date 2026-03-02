@@ -185,7 +185,7 @@ export default function App() {
   const [dialogueVoiceA, setDialogueVoiceA] = useState("expr-voice-2-f");
   const [dialogueVoiceB, setDialogueVoiceB] = useState("expr-voice-2-m");
   const [dialogueClips, setDialogueClips] = useState([]);
-  const [dialoguePauseMs, setDialoguePauseMs] = useState(250);
+  const [dialoguePauseMs, setDialoguePauseMs] = useState(500);
   const [sceneCompiling, setSceneCompiling] = useState(false);
   const [sceneAudioUrl, setSceneAudioUrl] = useState("");
   const sceneAudioUrlRef = useRef("");
