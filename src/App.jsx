@@ -162,7 +162,7 @@ export default function App() {
   const [modelInitialized, setModelInitialized] = useState(false);
   const [text, setText] = useState("KittenTTS in browser with ONNX Runtime Web.");
   const [voice, setVoice] = useState("Bella");
-  const [speed, setSpeed] = useState(1);
+  const [speed, setSpeed] = useState(1.2);
   const [voices, setVoices] = useState(FALLBACK_VOICES);
   const [audioUrl, setAudioUrl] = useState("");
   const [error, setError] = useState("");
@@ -538,8 +538,8 @@ export default function App() {
     try {
       const Ctx = window.AudioContext || window.webkitAudioContext;
       const ctx = new Ctx();
-      const sampleRate = 24000;
-      const pauseSamples = Math.max(0, Math.floor((dialoguePauseMs / 1000) * sampleRate));
+      const outputSampleRate = Number(ctx.sampleRate) || 24000;
+      const pauseSamples = Math.max(0, Math.floor((dialoguePauseMs / 1000) * outputSampleRate));
       const rendered = [];
 
       for (let i = 0; i < clips.length; i += 1) {
@@ -563,7 +563,7 @@ export default function App() {
         offset += arr.length;
       }
 
-      const wavBlob = encodeWavFromFloat32(merged, sampleRate, 1);
+      const wavBlob = encodeWavFromFloat32(merged, outputSampleRate, 1);
       const url = URL.createObjectURL(wavBlob);
       if (sceneAudioUrlRef.current) URL.revokeObjectURL(sceneAudioUrlRef.current);
       sceneAudioUrlRef.current = url;
@@ -610,19 +610,6 @@ export default function App() {
             />
           </label>
         </div>
-
-        <label className="block">
-          <span className="mb-2 block text-sm text-slate-200">Pause Between Lines: {dialoguePauseMs}ms</span>
-          <input
-            type="range"
-            min="0"
-            max="1200"
-            step="50"
-            value={dialoguePauseMs}
-            onChange={(e) => setDialoguePauseMs(Number(e.target.value))}
-            className="w-full accent-fuchsia-300"
-          />
-        </label>
 
         <div className="grid gap-4 md:grid-cols-2">
           <label className="block">
@@ -821,6 +808,23 @@ export default function App() {
         <p className="text-xs text-slate-400">
           Author script lines as <code>SPEAKER: text</code>. Speakers auto-map to Voice A/B in encounter order.
         </p>
+
+        <div className="rounded-xl border border-fuchsia-400/30 bg-slate-950/50 p-3">
+          <p className="text-sm font-medium text-fuchsia-200">Scene Settings</p>
+          <label className="mt-2 block">
+            <span className="mb-2 block text-sm text-slate-200">Pause Between Lines: {dialoguePauseMs}ms</span>
+            <input
+              type="range"
+              min="0"
+              max="1200"
+              step="50"
+              value={dialoguePauseMs}
+              onChange={(e) => setDialoguePauseMs(Number(e.target.value))}
+              className="w-full accent-fuchsia-300"
+            />
+          </label>
+        </div>
+
         <div className="rounded-xl border border-slate-700 bg-slate-950/60 p-3">
           <p className="text-xs text-slate-300">
             Parsed lines: <strong>{dialoguePreviewTurns.length}</strong>
