@@ -84,6 +84,7 @@ export default function App() {
   const [runtimeInfo, setRuntimeInfo] = useState("");
   const [debugInfo, setDebugInfo] = useState("");
   const [trimTailSamples, setTrimTailSamples] = useState(5000);
+  const [execMode, setExecMode] = useState("wasm");
 
   const [shootoutLoading, setShootoutLoading] = useState(false);
   const [shootoutProgress, setShootoutProgress] = useState("");
@@ -160,12 +161,13 @@ export default function App() {
     if (!workerRef.current) return;
     setStatus("loading");
     setError("");
+    const providers = execMode === "webgpu" ? ["webgpu"] : execMode === "auto" ? ["webgpu", "wasm"] : ["wasm"];
     workerRef.current.postMessage({
       type: "init",
       payload: {
         modelDir,
         configUrl,
-        providers: ["wasm"],
+        providers,
         configOverrides: {
           trimTailSamples,
           phonemizerMode: "espeak_js"
@@ -327,6 +329,19 @@ export default function App() {
         </div>
 
         <label className="block">
+          <span className="mb-2 block text-sm text-slate-200">Execution Mode</span>
+          <select
+            value={execMode}
+            onChange={(e) => setExecMode(e.target.value)}
+            className="w-full rounded-xl border border-slate-600 bg-slate-950 p-3 text-slate-100"
+          >
+            <option value="wasm">WASM (Stable)</option>
+            <option value="auto">Auto (WebGPU then WASM)</option>
+            <option value="webgpu">WebGPU (Experimental)</option>
+          </select>
+        </label>
+
+        <label className="block">
           <span className="mb-2 block text-sm text-slate-200">Tail Trim: {trimTailSamples} samples</span>
           <input
             type="range"
@@ -346,7 +361,7 @@ export default function App() {
         >
           {status === "loading" ? "Loading Model..." : "Initialize Model"}
         </button>
-        <p className="text-xs text-slate-400">Re-initialize after changing voice/speed/tail trim.</p>
+        <p className="text-xs text-slate-400">Re-initialize after changing voice/speed/trim/execution mode.</p>
 
         {error && <div className="rounded-xl border border-red-400/50 bg-red-900/20 p-3 text-sm text-red-200">{error}</div>}
       </section>

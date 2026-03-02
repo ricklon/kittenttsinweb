@@ -60,7 +60,8 @@ self.onmessage = async (event) => {
           symbolsCount: Array.isArray(symbols) ? symbols.length : null,
           preprocessMode: config?.tokenizer?.preprocessMode || "unknown",
           phonemizerMode: config?.phonemizer?.mode || "unknown",
-          trimTailSamples: config?.trimTailSamples ?? null
+          trimTailSamples: config?.trimTailSamples ?? null,
+          providersRequested: payload?.providers || null
         }
       });
 

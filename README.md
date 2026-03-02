@@ -36,6 +36,10 @@ Important:
   - `Phonemizer Mode`: `espeak_js` vs `simple_en`
   - `Tail Trim`: trims end samples to reduce trailing artifacts
   - Re-click `Initialize Model` after changing either control.
+- UI includes `Execution Mode`:
+  - `WASM (Stable)`
+  - `Auto (WebGPU then WASM)`
+  - `WebGPU (Experimental)`
 
 ## One-command model download
 
@@ -89,5 +93,5 @@ Optional custom adapter override:
 ## Parity gap vs full Kitten pipeline
 
 To match the deep-dive quality path, still add:
-- exact symbol/token mapping parity with Kitten Python code
-- optional WebGPU mode toggle after WASM path is stable
+- broader text preprocessor parity with Kitten Python preprocessing steps
+- WebGPU quality/perf validation across browsers and hardware

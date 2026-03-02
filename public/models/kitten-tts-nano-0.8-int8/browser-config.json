@@ -2,7 +2,7 @@
   "modelFile": "model.onnx",
   "voicesFile": "voices.npz",
   "sampleRate": 24000,
-  "maxChunkChars": 240,
+  "maxChunkChars": 400,
   "providers": ["wasm"],
   "defaultVoice": "Bella",
   "tokenizer": {

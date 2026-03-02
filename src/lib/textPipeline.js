@@ -6,41 +6,59 @@ function normalizeText(text) {
     .trim();
 }
 
-function splitLongSegment(segment, maxChars) {
-  const out = [];
-  let i = 0;
-  while (i < segment.length) {
-    out.push(segment.slice(i, i + maxChars));
-    i += maxChars;
-  }
-  return out;
+function ensurePunctuation(text) {
+  const t = String(text || "").trim();
+  if (!t) return t;
+  return /[.!?,;:]$/.test(t) ? t : `${t},`;
 }
 
-export function splitTextIntoChunks(text, maxChars = 240) {
-  if (!text) return [];
-  if (text.length <= maxChars) return [text];
-
-  const sentences = text.split(/(?<=[.!?])\s+/).filter(Boolean);
+// Mirrors KittenTTS 0.8.1 onnx_model.chunk_text behavior.
+export function splitTextIntoChunks(text, maxChars = 400) {
+  const input = String(text || "");
+  if (!input.trim()) return [];
+  const sentences = input.split(/[.!?]+/).filter(Boolean);
   const out = [];
-  let current = "";
 
   for (const sentence of sentences) {
-    const candidate = `${current} ${sentence}`.trim();
-    if (candidate.length <= maxChars) {
-      current = candidate;
+    const s = sentence.trim();
+    if (!s) continue;
+    if (s.length <= maxChars) {
+      out.push(ensurePunctuation(s));
       continue;
     }
-    if (current) out.push(current);
-    if (sentence.length > maxChars) {
-      out.push(...splitLongSegment(sentence, maxChars));
-      current = "";
-    } else {
-      current = sentence;
+
+    const words = s.split(/\s+/).filter(Boolean);
+    let temp = "";
+    for (const word of words) {
+      const candidate = temp ? `${temp} ${word}` : word;
+      if (candidate.length <= maxChars) {
+        temp = candidate;
+      } else {
+        if (temp) out.push(ensurePunctuation(temp));
+        temp = word;
+      }
+    }
+    if (temp) {
+      out.push(ensurePunctuation(temp));
     }
   }
 
-  if (current) out.push(current);
-  return out.length ? out : splitLongSegment(text, maxChars);
+  if (out.length) return out;
+  if (input.length <= maxChars) return [ensurePunctuation(input)];
+  // Fallback for text without clear sentence boundaries.
+  const words = input.split(/\s+/).filter(Boolean);
+  let temp = "";
+  for (const word of words) {
+    const candidate = temp ? `${temp} ${word}` : word;
+    if (candidate.length <= maxChars) {
+      temp = candidate;
+    } else {
+      if (temp) out.push(ensurePunctuation(temp));
+      temp = word;
+    }
+  }
+  if (temp) out.push(ensurePunctuation(temp));
+  return out;
 }
 
 function encodeWithSymbolMap(text, cfg) {
