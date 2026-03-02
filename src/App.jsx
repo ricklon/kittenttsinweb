@@ -4,6 +4,26 @@ const FALLBACK_VOICES = ["Bella", "Jasper", "Luna", "Bruno", "Rosie", "Hugo", "K
 const BASE_URL = import.meta.env.BASE_URL || "/";
 const DEFAULT_MODEL_DIR = `${BASE_URL}models/kitten-tts-nano-0.8-int8`;
 const RATINGS_KEY = "kittentts_mos_ratings_v1";
+const VOICE_TECH_TO_NICK = {
+  "expr-voice-2-f": "Bella",
+  "expr-voice-2-m": "Jasper",
+  "expr-voice-3-f": "Luna",
+  "expr-voice-3-m": "Bruno",
+  "expr-voice-4-f": "Rosie",
+  "expr-voice-4-m": "Hugo",
+  "expr-voice-5-f": "Kiki",
+  "expr-voice-5-m": "Leo"
+};
+const PREFERRED_VOICE_ORDER = [
+  "expr-voice-2-f",
+  "expr-voice-2-m",
+  "expr-voice-3-f",
+  "expr-voice-3-m",
+  "expr-voice-4-f",
+  "expr-voice-4-m",
+  "expr-voice-5-f",
+  "expr-voice-5-m"
+];
 
 const PRESETS = [
   {
@@ -66,6 +86,22 @@ function saveRatings(list) {
   localStorage.setItem(RATINGS_KEY, JSON.stringify(list));
 }
 
+function voiceLabel(voice) {
+  const nick = VOICE_TECH_TO_NICK[voice];
+  if (nick) return `${nick} (${voice})`;
+  return voice;
+}
+
+function sortVoicesStable(list) {
+  const rank = new Map(PREFERRED_VOICE_ORDER.map((v, i) => [v, i]));
+  return [...list].sort((a, b) => {
+    const ra = rank.has(a) ? rank.get(a) : Number.MAX_SAFE_INTEGER;
+    const rb = rank.has(b) ? rank.get(b) : Number.MAX_SAFE_INTEGER;
+    if (ra !== rb) return ra - rb;
+    return voiceLabel(a).localeCompare(voiceLabel(b));
+  });
+}
+
 export default function App() {
   const workerRef = useRef(null);
   const pendingRef = useRef(new Map());
@@ -117,8 +153,9 @@ export default function App() {
         const provider = Array.isArray(payload?.providers) ? payload.providers.join(", ") : "unknown";
         setRuntimeInfo(`provider=${provider} | inputs=[${inputs}] | outputs=[${outputs}]`);
         if (Array.isArray(payload?.voices) && payload.voices.length) {
-          setVoices(payload.voices);
-          if (!payload.voices.includes(voice)) setVoice(payload.voices[0]);
+          const sortedVoices = sortVoicesStable(payload.voices);
+          setVoices(sortedVoices);
+          if (!sortedVoices.includes(voice)) setVoice(sortedVoices[0]);
         }
         return;
       }
@@ -342,7 +379,7 @@ export default function App() {
             >
               {voices.map((v) => (
                 <option key={v} value={v}>
-                  {v}
+                  {voiceLabel(v)}
                 </option>
               ))}
             </select>
@@ -456,7 +493,7 @@ export default function App() {
 
           {audioUrl && (
             <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-3">
-              <p className="mb-2 text-sm text-slate-200">Latest Clip ({voice})</p>
+              <p className="mb-2 text-sm text-slate-200">Latest Clip ({voiceLabel(voice)})</p>
               <audio controls className="w-full" src={audioUrl} />
               <p className="mt-2 text-xs text-slate-400">{lastStats}</p>
               <div className="mt-3 flex items-center gap-2">
@@ -498,7 +535,7 @@ export default function App() {
             <div className="mt-3 grid gap-3">
               {shootoutClips.map((clip) => (
                 <div key={clip.id} className="rounded-xl border border-slate-700 bg-slate-950/70 p-3">
-                  <p className="text-sm text-slate-200">{clip.voice}</p>
+                  <p className="text-sm text-slate-200">{voiceLabel(clip.voice)}</p>
                   <p className="mb-2 text-xs text-slate-400">
                     {clip.samples} samples, {clip.chunks} chunk(s)
                   </p>
