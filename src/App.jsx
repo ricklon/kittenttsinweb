@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { encodeWavFromFloat32 } from "./lib/wav";
+import { parseDialogueScript } from "./lib/dialogue";
 
 const FALLBACK_VOICES = ["Bella", "Jasper", "Luna", "Bruno", "Rosie", "Hugo", "Kiki", "Leo"];
 const BASE_URL = import.meta.env.BASE_URL || "/";
@@ -148,53 +149,6 @@ function sortVoicesStable(list) {
     if (ra !== rb) return ra - rb;
     return voiceLabel(a).localeCompare(voiceLabel(b));
   });
-}
-
-function parseDialogueScript(script, voiceA, voiceB) {
-  const lines = String(script || "").split("\n");
-  const speakerOrder = new Map();
-  const turns = [];
-
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    if (line.startsWith("#")) continue;
-    if (/^\d+\.$/.test(line)) continue;
-
-    let speaker = "";
-    let text = "";
-
-    // Preferred format: [SPEAKER=Name] text
-    const bracketMatch = line.match(/^\[(.*?)\]\s*(.+)$/);
-    if (bracketMatch) {
-      const attrs = bracketMatch[1].split("|").map((x) => x.trim());
-      text = bracketMatch[2].trim();
-      for (const attr of attrs) {
-        const kv = attr.match(/^([A-Z_]+)\s*=\s*(.+)$/i);
-        if (!kv) continue;
-        if (kv[1].toUpperCase() === "SPEAKER") {
-          speaker = kv[2].trim();
-        }
-      }
-    }
-
-    // Backward compatibility: SPEAKER: text
-    if (!speaker) {
-      const legacyMatch = line.match(/^([A-Z][A-Z0-9_-]{0,40})\s*:\s*(.+)$/i);
-      if (!legacyMatch) continue;
-      speaker = legacyMatch[1].trim();
-      text = legacyMatch[2].trim();
-    }
-
-    if (!text) continue;
-
-    if (!speakerOrder.has(speaker)) speakerOrder.set(speaker, speakerOrder.size);
-    const idx = speakerOrder.get(speaker);
-    const mappedVoice = idx % 2 === 0 ? voiceA : voiceB;
-    turns.push({ speaker, text, voice: mappedVoice });
-  }
-
-  return turns;
 }
 
 export default function App() {

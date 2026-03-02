@@ -199,7 +199,16 @@ export class KittenOnnxEngine {
     if (!tokenInput) throw new Error(`No token input found. ONNX inputs: ${this.session.inputNames.join(", ")}`);
 
     const rendered = [];
-    for (const chunk of chunks) {
+    const onProgress = typeof options.onProgress === "function" ? options.onProgress : null;
+    for (let i = 0; i < chunks.length; i += 1) {
+      const chunk = chunks[i];
+      if (onProgress) {
+        onProgress({
+          stage: "chunk_start",
+          current: i + 1,
+          total: chunks.length
+        });
+      }
       const prepared = await this.phonemizer.apply(chunk);
       const tokenIds = tokenizeText(prepared, cfg.tokenizer);
       const seqLen = tokenIds.length;
@@ -223,6 +232,13 @@ export class KittenOnnxEngine {
       const trim = Number(cfg.trimTailSamples ?? 5000);
       const raw = new Float32Array(out.data);
       rendered.push(sanitizeAudio(trimTailSamples(raw, trim)));
+      if (onProgress) {
+        onProgress({
+          stage: "chunk_done",
+          current: i + 1,
+          total: chunks.length
+        });
+      }
     }
 
     return {
