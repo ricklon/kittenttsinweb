@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 const FALLBACK_VOICES = ["Bella", "Jasper", "Luna", "Bruno", "Rosie", "Hugo", "Kiki", "Leo"];
-const DEFAULT_MODEL_DIR = "/models/kitten-tts-nano-0.8-int8";
+const BASE_URL = import.meta.env.BASE_URL || "/";
+const DEFAULT_MODEL_DIR = `${BASE_URL}models/kitten-tts-nano-0.8-int8`;
 const RATINGS_KEY = "kittentts_mos_ratings_v1";
 
 const PRESETS = [

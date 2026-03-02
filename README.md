@@ -17,6 +17,18 @@ npm run dev
 
 Open `http://127.0.0.1:5173`.
 
+## GitHub Pages demo
+
+This repo includes a deploy workflow:
+- [.github/workflows/pages.yml](/home/ra/Projects/kittenttsinweb/.github/workflows/pages.yml)
+
+Expected demo URL:
+- `https://ricklon.github.io/kittenttsinweb/`
+
+One-time repo setting:
+1. GitHub repo -> `Settings` -> `Pages`
+2. `Build and deployment` source: `GitHub Actions`
+
 ## Model files required
 
 Place model assets in:
