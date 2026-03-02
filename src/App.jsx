@@ -85,6 +85,7 @@ export default function App() {
   const [debugInfo, setDebugInfo] = useState("");
   const [trimTailSamples, setTrimTailSamples] = useState(5000);
   const [execMode, setExecMode] = useState("wasm");
+  const [webgpuStatus, setWebgpuStatus] = useState("Not checked");
 
   const [shootoutLoading, setShootoutLoading] = useState(false);
   const [shootoutProgress, setShootoutProgress] = useState("");
@@ -156,6 +157,38 @@ export default function App() {
       for (const url of shootoutUrlsRef.current) URL.revokeObjectURL(url);
     };
   }, [voice]);
+
+  async function checkWebgpuReadiness() {
+    if (typeof window === "undefined") {
+      setWebgpuStatus("WebGPU check unavailable in this environment.");
+      return;
+    }
+
+    if (!window.isSecureContext) {
+      setWebgpuStatus("WebGPU unavailable: secure context required (use localhost/https).");
+      return;
+    }
+
+    if (!("gpu" in navigator)) {
+      setWebgpuStatus(
+        "WebGPU not exposed by browser. In Chrome, try chrome://flags -> Unsafe WebGPU (experimental), then restart."
+      );
+      return;
+    }
+
+    try {
+      const adapter = await navigator.gpu.requestAdapter();
+      if (!adapter) {
+        setWebgpuStatus(
+          "WebGPU API found but no GPU adapter available. Keep using WASM/Auto; WebGPU remains experimental."
+        );
+        return;
+      }
+      setWebgpuStatus("WebGPU adapter detected. Experimental mode is likely enabled and usable.");
+    } catch (err) {
+      setWebgpuStatus(`WebGPU check failed: ${String(err?.message || err)}`);
+    }
+  }
 
   function initModel() {
     if (!workerRef.current) return;
@@ -339,6 +372,19 @@ export default function App() {
             <option value="auto">Auto (WebGPU then WASM)</option>
             <option value="webgpu">WebGPU (Experimental)</option>
           </select>
+          <p className="mt-2 text-xs text-slate-400">
+            If WebGPU fails: switch to <code>Auto</code> or <code>WASM</code>. For Chrome WebGPU, open{" "}
+            <code>chrome://flags</code>, enable <code>Unsafe WebGPU</code>, then restart Chrome.
+          </p>
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              onClick={checkWebgpuReadiness}
+              className="rounded-md border border-slate-500 px-2 py-1 text-xs text-slate-200 hover:border-cyan-300"
+            >
+              Check WebGPU
+            </button>
+            <span className="text-xs text-slate-300">{webgpuStatus}</span>
+          </div>
         </label>
 
         <label className="block">
