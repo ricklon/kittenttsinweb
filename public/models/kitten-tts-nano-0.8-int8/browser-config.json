@@ -1,0 +1,31 @@
+{
+  "modelFile": "model.onnx",
+  "voicesFile": "voices.npz",
+  "sampleRate": 24000,
+  "maxChunkChars": 240,
+  "providers": ["wasm"],
+  "defaultVoice": "Bella",
+  "tokenizer": {
+    "preprocessMode": "symbol_map",
+    "prefixTokens": [0],
+    "suffixTokens": [10, 0],
+    "unkToken": 0,
+    "maxLength": 512,
+    "symbolsFile": "symbols.json"
+  },
+  "phonemizer": {
+    "mode": "espeak_js",
+    "language": "en-us",
+    "lexiconFile": "lexicon.json",
+    "fallback": "keep"
+  },
+  "inputNames": {
+    "tokens": "input_ids",
+    "lengths": "input_lengths",
+    "voice": "style",
+    "speed": "speed"
+  },
+  "outputNames": {
+    "audio": "waveform"
+  }
+}
