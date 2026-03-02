@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { encodeWavFromFloat32 } from "./lib/wav";
 
 const FALLBACK_VOICES = ["Bella", "Jasper", "Luna", "Bruno", "Rosie", "Hugo", "Kiki", "Leo"];
 const BASE_URL = import.meta.env.BASE_URL || "/";
@@ -559,8 +560,12 @@ export default function App() {
     }
 
     if (clips.length > 0) {
-      await compileSceneAudioFromClips(clips);
-      setDialogueProgress(`Scene ready: ${clips.length}/${turns.length} lines`);
+      const ok = await compileSceneAudioFromClips(clips);
+      if (ok) {
+        setDialogueProgress(`Scene ready: ${clips.length}/${turns.length} lines`);
+      } else {
+        setDialogueProgress("Scene compile failed.");
+      }
     } else {
       setDialogueProgress(`Done: rendered ${clips.length}/${turns.length} lines`);
     }
@@ -571,7 +576,7 @@ export default function App() {
 
   async function compileSceneAudioFromClips(clipsInput) {
     const clips = clipsInput || dialogueClips;
-    if (!clips || clips.length === 0) return;
+    if (!clips || clips.length === 0) return false;
     setSceneCompiling(true);
     setError("");
     setDialogueProgress("Compiling scene audio...");
@@ -611,8 +616,10 @@ export default function App() {
       setSceneAudioUrl(url);
       setDialogueProgress(`Scene compiled: ${clips.length} lines, pause ${dialoguePauseMs}ms`);
       await ctx.close();
+      return true;
     } catch (err) {
       setError(`Scene compile failed: ${String(err?.message || err)}`);
+      return false;
     } finally {
       setSceneCompiling(false);
     }
