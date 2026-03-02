@@ -133,3 +133,93 @@ Optional custom adapter override:
 To match the deep-dive quality path, still add:
 - broader text preprocessor parity with Kitten Python preprocessing steps
 - WebGPU quality/perf validation across browsers and hardware
+
+## Model transparency and selection notes
+
+When evaluating this TTS stack for production, separate two questions:
+- How the model is run/integrated
+- How the model was trained and documented
+
+Current KittenTTS public materials provide strong usage guidance, but only partial training-data transparency.
+At the time of writing, public docs explain architecture and usage, while detailed dataset composition/licensing details are not fully spelled out in one definitive place.
+
+Implication for adopters:
+- You can validate runtime behavior and quality in this repo.
+- You should still perform your own policy/legal/compliance review before broad deployment.
+
+## How Kitten-style input is interpreted
+
+For this browser implementation, speaking behavior is driven by:
+- Text preprocessing and chunking
+- Phonemizer mode (`espeak_js`, `simple_en`, etc.)
+- Token mapping (`symbol_map` + `symbols.json`)
+- Voice embedding selection (`voices.npz`)
+- Speed control
+
+In practice:
+- Punctuation changes rhythm and pauses.
+- Numbers and dates are interpretation-sensitive (format matters).
+- Acronyms can be spoken as words or letter-by-letter depending on text form.
+- Different voices may pronounce edge cases differently.
+
+## What users can and cannot expect
+
+What works well:
+- Fast browser-only inference (no Python backend).
+- General English narration and short dialogue.
+- A/B voice comparisons and whole-scene compilation.
+
+Current constraints:
+- Not full parity with the complete Python pipeline.
+- Specialized domains (dense STEM notation, chemical names, code-like text) may need authoring tweaks.
+- WebGPU remains experimental by browser/hardware; WASM is the reliable default.
+
+## Authoring guide for clearer speech
+
+Use this style for best intelligibility:
+- Keep utterances short (one sentence per line where possible).
+- Write dialogue as one speaker line per utterance.
+- Prefer explicit punctuation over long comma chains.
+- Rewrite ambiguous tokens into speakable forms.
+
+### Dialogue formatting
+
+Preferred:
+
+```txt
+[SPEAKER=HOST] Welcome to the test.
+[SPEAKER=GUEST] Thanks, I will explain the results.
+```
+
+Also supported:
+
+```txt
+HOST: Welcome to the test.
+GUEST: Thanks, I will explain the results.
+```
+
+### Dates, times, and numbers
+
+Prefer explicit, human-readable forms:
+- `2026-03-02` -> `March 2, 2026`
+- `03/04/26` (ambiguous) -> `March 4, 2026` or `April 3, 2026` (pick one explicitly)
+- `8:30pm` -> `8:30 p.m.`
+- `$1250` -> `$1,250`
+
+### STEM and technical text
+
+For formulas/symbol-heavy lines, write a spoken version:
+- `H2O` -> `H two O`
+- `CO2` -> `C O two` or `carbon dioxide`
+- `x^2` -> `x squared`
+- `Δv` -> `delta v`
+- `GPU/CPU` -> `G P U slash C P U` if letter clarity is important
+
+For critical output, run a quick shootout pass and keep the best-scoring phrasing/voice pair.
+
+## Sources used for these notes
+
+- KittenTTS repository: `https://github.com/KittenML/KittenTTS`
+- KittenTTS README: `https://raw.githubusercontent.com/KittenML/KittenTTS/main/README.md`
+- KittenTTS ONNX path: `https://raw.githubusercontent.com/KittenML/KittenTTS/main/kittentts/onnx_model.py`
+- KittenTTS model wrapper: `https://raw.githubusercontent.com/KittenML/KittenTTS/main/kittentts/get_model.py`
