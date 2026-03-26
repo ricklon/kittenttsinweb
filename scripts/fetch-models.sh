@@ -4,21 +4,22 @@ set -euo pipefail
 TARGET="${1:-all}"
 
 download_model() {
-  local slug="$1"
+  local remote_slug="$1"
   local remote_model_file="$2"
-  local model_dir="public/models/$slug"
-  local model_url="https://huggingface.co/KittenML/$slug/resolve/main/$remote_model_file"
-  local voices_url="https://huggingface.co/KittenML/$slug/resolve/main/voices.npz"
+  local local_slug="${3:-$remote_slug}"
+  local model_dir="public/models/$local_slug"
+  local model_url="https://huggingface.co/KittenML/$remote_slug/resolve/main/$remote_model_file"
+  local voices_url="https://huggingface.co/KittenML/$remote_slug/resolve/main/voices.npz"
 
   mkdir -p "$model_dir"
 
-  echo "Downloading $slug model.onnx..."
+  echo "Downloading $local_slug model.onnx..."
   curl -fL --retry 3 "$model_url" -o "$model_dir/model.onnx"
 
-  echo "Downloading $slug voices.npz..."
+  echo "Downloading $local_slug voices.npz..."
   curl -fL --retry 3 "$voices_url" -o "$model_dir/voices.npz"
 
-  echo "Model assets ready for $slug:"
+  echo "Model assets ready for $local_slug:"
   ls -lah "$model_dir/model.onnx" "$model_dir/voices.npz"
 }
 
@@ -27,14 +28,14 @@ case "$TARGET" in
     download_model "kitten-tts-nano-0.8-int8" "kitten_tts_nano_v0_8.onnx"
     ;;
   nano)
-    download_model "kitten-tts-nano-0.8" "kitten_tts_nano_v0_8.onnx"
+    download_model "kitten-tts-nano-0.8-fp32" "kitten_tts_nano_v0_8.onnx" "kitten-tts-nano-0.8"
     ;;
   micro)
     download_model "kitten-tts-micro-0.8" "kitten_tts_micro_v0_8.onnx"
     ;;
   all)
     download_model "kitten-tts-nano-0.8-int8" "kitten_tts_nano_v0_8.onnx"
-    download_model "kitten-tts-nano-0.8" "kitten_tts_nano_v0_8.onnx"
+    download_model "kitten-tts-nano-0.8-fp32" "kitten_tts_nano_v0_8.onnx" "kitten-tts-nano-0.8"
     download_model "kitten-tts-micro-0.8" "kitten_tts_micro_v0_8.onnx"
     ;;
   *)

@@ -1,4 +1,5 @@
 import { KittenOnnxEngine } from "../lib/kittenOnnx";
+import { DEFAULT_KITTEN_SYMBOLS, resolveKittenSymbols } from "../lib/kittenSymbols";
 import {
   fetchArrayBufferCached,
   fetchArrayBufferFresh,
@@ -49,6 +50,10 @@ self.onmessage = async (event) => {
         lexicon = await fetchJsonFresh(lexiconUrl);
       }
 
+      const usingBuiltinSymbols =
+        config?.tokenizer?.preprocessMode === "symbol_map" && (!Array.isArray(symbols) || symbols.length === 0);
+      const resolvedSymbols = usingBuiltinSymbols ? resolveKittenSymbols(symbols) : symbols;
+
       self.postMessage({
         type: "debug",
         payload: {
@@ -57,7 +62,8 @@ self.onmessage = async (event) => {
           voicesUrl,
           symbolsUrl,
           lexiconUrl,
-          symbolsCount: Array.isArray(symbols) ? symbols.length : null,
+          symbolsCount: Array.isArray(resolvedSymbols) ? resolvedSymbols.length : null,
+          usingBuiltinSymbols,
           preprocessMode: config?.tokenizer?.preprocessMode || "unknown",
           phonemizerMode: config?.phonemizer?.mode || "unknown",
           trimTailSamples: config?.trimTailSamples ?? null,
@@ -65,13 +71,6 @@ self.onmessage = async (event) => {
         }
       });
 
-      if (config?.tokenizer?.preprocessMode === "symbol_map" && (!Array.isArray(symbols) || symbols.length === 0)) {
-        throw new Error(
-          `symbol_map requires non-empty symbols. URL=${symbolsUrl || "n/a"} count=${
-            Array.isArray(symbols) ? symbols.length : "non-array"
-          }`
-        );
-      }
       let info;
       try {
         info = await engine.init({
@@ -79,7 +78,7 @@ self.onmessage = async (event) => {
           configObject: config,
           modelBytes,
           voicesBytes,
-          symbols: Array.isArray(symbols) ? symbols : null,
+          symbols: Array.isArray(resolvedSymbols) ? resolvedSymbols : null,
           lexicon: lexicon && typeof lexicon === "object" ? lexicon : null
         });
       } catch (err) {
@@ -96,7 +95,7 @@ self.onmessage = async (event) => {
           configObject: config,
           modelBytes: freshModelBytes,
           voicesBytes: freshVoicesBytes,
-          symbols: Array.isArray(symbols) ? symbols : null,
+          symbols: Array.isArray(resolvedSymbols) ? resolvedSymbols : null,
           lexicon: lexicon && typeof lexicon === "object" ? lexicon : null
         });
       }
