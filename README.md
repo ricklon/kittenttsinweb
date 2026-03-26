@@ -9,6 +9,8 @@ This project is configured for a **100% in-browser** KittenTTS flow:
 
 ## Install and run
 
+Use Node `>=20.19.0`.
+
 ```bash
 npm install
 ./scripts/fetch-models.sh
