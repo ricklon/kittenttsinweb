@@ -7,6 +7,10 @@ This project is configured for a **100% in-browser** KittenTTS flow:
 - IndexedDB asset caching
 - Chunked generation for longer text
 
+## Tech Preview
+
+Live demo: `https://ricklon.github.io/kittenttsinweb/`
+
 ## Install and run
 
 Use Node `>=20.19.0`.
@@ -33,9 +37,11 @@ One-time repo setting:
 
 ## Model files required
 
-Place model assets in:
+Place model assets in one or more of:
 
-`public/models/kitten-tts-nano-0.8-int8/`
+- `public/models/kitten-tts-nano-0.8-int8/`
+- `public/models/kitten-tts-nano-0.8/`
+- `public/models/kitten-tts-micro-0.8/`
 
 Required files:
 - `model.onnx`
@@ -45,6 +51,7 @@ Required files:
 - `lexicon.json` (template included as empty object)
 
 Important:
+- The UI exposes preset model choices for `Nano INT8`, `Nano FP32`, and `Micro FP32`.
 - `symbol_map` mode requires a real `symbols.json` token list. The placeholder `[]` will intentionally error at runtime.
 - UI includes live A/B controls:
   - `Phonemizer Mode`: `espeak_js` vs `simple_en`
@@ -61,9 +68,21 @@ Important:
 ./scripts/fetch-models.sh
 ```
 
-This fetches:
+By default this fetches all browser-supported presets:
 - `public/models/kitten-tts-nano-0.8-int8/model.onnx`
 - `public/models/kitten-tts-nano-0.8-int8/voices.npz`
+- `public/models/kitten-tts-nano-0.8/model.onnx`
+- `public/models/kitten-tts-nano-0.8/voices.npz`
+- `public/models/kitten-tts-micro-0.8/model.onnx`
+- `public/models/kitten-tts-micro-0.8/voices.npz`
+
+To fetch one model only:
+
+```bash
+./scripts/fetch-models.sh nano-int8
+./scripts/fetch-models.sh nano
+./scripts/fetch-models.sh micro
+```
 
 ## Browser config
 

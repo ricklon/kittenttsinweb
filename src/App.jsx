@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { encodeWavFromFloat32 } from "./lib/wav";
 import { parseDialogueScript } from "./lib/dialogue";
+import { buildModelPresets, findModelPreset } from "./lib/modelPresets";
 
 const FALLBACK_VOICES = ["Bella", "Jasper", "Luna", "Bruno", "Rosie", "Hugo", "Kiki", "Leo"];
 const BASE_URL = import.meta.env.BASE_URL || "/";
-const DEFAULT_MODEL_DIR = `${BASE_URL}models/kitten-tts-nano-0.8-int8`;
+const MODEL_PRESETS = buildModelPresets(BASE_URL);
+const DEFAULT_MODEL_PRESET = MODEL_PRESETS[0];
+const DEFAULT_MODEL_DIR = DEFAULT_MODEL_PRESET.modelDir;
 const RATINGS_KEY = "kittentts_mos_ratings_v1";
 const VOICE_TECH_TO_NICK = {
   "expr-voice-2-f": "Bella",
@@ -167,7 +170,7 @@ export default function App() {
   const [audioUrl, setAudioUrl] = useState("");
   const [error, setError] = useState("");
   const [modelDir, setModelDir] = useState(DEFAULT_MODEL_DIR);
-  const [configUrl, setConfigUrl] = useState(`${DEFAULT_MODEL_DIR}/browser-config.json`);
+  const [configUrl, setConfigUrl] = useState(DEFAULT_MODEL_PRESET.configUrl);
   const [lastStats, setLastStats] = useState("");
   const [runtimeInfo, setRuntimeInfo] = useState("");
   const [debugInfo, setDebugInfo] = useState("");
@@ -208,6 +211,10 @@ export default function App() {
   const dialoguePreviewTurns = useMemo(
     () => parseDialogueScript(dialogueScript, dialogueVoiceA, dialogueVoiceB),
     [dialogueScript, dialogueVoiceA, dialogueVoiceB]
+  );
+  const activeModelPreset = useMemo(
+    () => findModelPreset(modelDir, configUrl, MODEL_PRESETS),
+    [modelDir, configUrl]
   );
 
   useEffect(() => {
@@ -596,7 +603,7 @@ export default function App() {
             <span className="mb-2 block text-sm text-slate-200">Model Directory</span>
             <input
               value={modelDir}
-              onChange={(e) => setModelDir(e.target.value)}
+              onChange={(e) => setModelDir(e.target.value.trim())}
               className="w-full rounded-xl border border-slate-600 bg-slate-950 p-3 text-slate-100"
             />
           </label>
@@ -605,11 +612,37 @@ export default function App() {
             <span className="mb-2 block text-sm text-slate-200">Browser Config URL</span>
             <input
               value={configUrl}
-              onChange={(e) => setConfigUrl(e.target.value)}
+              onChange={(e) => setConfigUrl(e.target.value.trim())}
               className="w-full rounded-xl border border-slate-600 bg-slate-950 p-3 text-slate-100"
             />
           </label>
         </div>
+
+        <label className="block">
+          <span className="mb-2 block text-sm text-slate-200">Model Preset</span>
+          <select
+            value={activeModelPreset?.key || "custom"}
+            onChange={(e) => {
+              const nextPreset = MODEL_PRESETS.find((preset) => preset.key === e.target.value);
+              if (!nextPreset) return;
+              setModelDir(nextPreset.modelDir);
+              setConfigUrl(nextPreset.configUrl);
+            }}
+            className="w-full rounded-xl border border-slate-600 bg-slate-950 p-3 text-slate-100"
+          >
+            {MODEL_PRESETS.map((preset) => (
+              <option key={preset.key} value={preset.key}>
+                {preset.label}
+              </option>
+            ))}
+            <option value="custom">Custom Paths</option>
+          </select>
+          <p className="mt-2 text-xs text-slate-400">
+            {activeModelPreset
+              ? activeModelPreset.description
+              : "Manual model/config paths are active. Re-select a preset to restore known browser-tested paths."}
+          </p>
+        </label>
 
         <div className="grid gap-4 md:grid-cols-2">
           <label className="block">

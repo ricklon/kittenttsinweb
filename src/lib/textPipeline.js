@@ -1,3 +1,5 @@
+import { preprocessText } from "./preprocess";
+
 function normalizeText(text) {
   return (text || "")
     .replace(/\s+/g, " ")
@@ -109,7 +111,8 @@ export function tokenizeText(text, tokenizerConfig = {}) {
 }
 
 export function prepareChunks(text, config) {
-  const clean = normalizeText(text);
+  const preprocessed = preprocessText(text, config?.preprocess || {});
+  const clean = normalizeText(preprocessed);
   if (!clean) return [];
   const maxChunkChars = config?.maxChunkChars ?? 240;
   return splitTextIntoChunks(clean, maxChunkChars);
