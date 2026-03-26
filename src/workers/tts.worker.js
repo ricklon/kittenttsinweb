@@ -104,7 +104,7 @@ self.onmessage = async (event) => {
     }
 
     if (type === "generate") {
-      const { text, voice, speed, requestId } = payload || {};
+      const { text, voice, speed, requestId, stream } = payload || {};
       self.postMessage({
         type: "progress",
         payload: {
@@ -116,6 +116,27 @@ self.onmessage = async (event) => {
       const { audio, sampleRate, chunks } = await engine.generate(text, {
         voice,
         speed,
+        onChunkAudio: stream
+          ? async (chunk) => {
+              const wavBlob = encodeWavFromFloat32(chunk.audio, chunk.sampleRate, 1);
+              const wavBuffer = await wavBlob.arrayBuffer();
+              self.postMessage(
+                {
+                  type: "audio_chunk",
+                  payload: {
+                    requestId: requestId || null,
+                    sampleRate: chunk.sampleRate,
+                    wavBuffer,
+                    samples: chunk.audio.length,
+                    chunkIndex: chunk.chunkIndex,
+                    totalChunks: chunk.totalChunks,
+                    text: chunk.text
+                  }
+                },
+                [wavBuffer]
+              );
+            }
+          : null,
         onProgress: (p) => {
           self.postMessage({
             type: "progress",

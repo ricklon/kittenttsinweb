@@ -157,6 +157,11 @@ function sortVoicesStable(list) {
 export default function App() {
   const workerRef = useRef(null);
   const pendingRef = useRef(new Map());
+  const streamRequestIdRef = useRef("");
+  const streamQueueRef = useRef([]);
+  const streamPlaybackBusyRef = useRef(false);
+  const streamAudioRef = useRef(null);
+  const streamUrlsRef = useRef([]);
   const audioUrlRef = useRef("");
   const shootoutUrlsRef = useRef([]);
   const dialogueUrlsRef = useRef([]);
@@ -168,6 +173,11 @@ export default function App() {
   const [speed, setSpeed] = useState(1.2);
   const [voices, setVoices] = useState(FALLBACK_VOICES);
   const [audioUrl, setAudioUrl] = useState("");
+  const [streamingLoading, setStreamingLoading] = useState(false);
+  const [streamingProgress, setStreamingProgress] = useState("");
+  const [streamingChunks, setStreamingChunks] = useState([]);
+  const [streamingFinalUrl, setStreamingFinalUrl] = useState("");
+  const [streamingPlayedChunks, setStreamingPlayedChunks] = useState(0);
   const [error, setError] = useState("");
   const [modelDir, setModelDir] = useState(DEFAULT_MODEL_DIR);
   const [configUrl, setConfigUrl] = useState(DEFAULT_MODEL_PRESET.configUrl);
@@ -198,8 +208,8 @@ export default function App() {
   const [ratings, setRatings] = useState(() => loadRatings());
 
   const canGenerate = useMemo(
-    () => status === "ready" && text.trim().length > 0 && !shootoutLoading && !dialogueLoading,
-    [status, text, shootoutLoading, dialogueLoading]
+    () => status === "ready" && text.trim().length > 0 && !shootoutLoading && !dialogueLoading && !streamingLoading,
+    [status, text, shootoutLoading, dialogueLoading, streamingLoading]
   );
 
   const ratingSummary = useMemo(() => {
@@ -258,6 +268,30 @@ export default function App() {
         }
       }
 
+      if (type === "audio_chunk") {
+        const requestId = payload?.requestId;
+        if (requestId === streamRequestIdRef.current && payload?.wavBuffer) {
+          const blob = new Blob([payload.wavBuffer], { type: "audio/wav" });
+          const url = URL.createObjectURL(blob);
+          streamUrlsRef.current.push(url);
+          setStreamingChunks((current) => [
+            ...current,
+            {
+              id: `${requestId}-${payload.chunkIndex}`,
+              url,
+              samples: payload.samples,
+              chunkIndex: payload.chunkIndex,
+              totalChunks: payload.totalChunks,
+              text: payload.text
+            }
+          ]);
+          streamQueueRef.current.push(url);
+          setStreamingProgress(`Streaming chunk ${payload.chunkIndex + 1}/${payload.totalChunks}`);
+          queueNextStreamChunk();
+        }
+        return;
+      }
+
       if (type === "progress") {
         const msg = payload?.message || payload?.stage || "Working";
         setConversionProgress(msg);
@@ -272,6 +306,13 @@ export default function App() {
           resolve({ error: String(payload?.message || payload || "Unknown error") });
           setConversionProgress("");
           return;
+        }
+        if (requestId && requestId === streamRequestIdRef.current) {
+          streamRequestIdRef.current = "";
+          streamQueueRef.current = [];
+          streamPlaybackBusyRef.current = false;
+          setStreamingLoading(false);
+          setStreamingProgress("");
         }
         setError(typeof payload === "string" ? payload : String(payload?.message || JSON.stringify(payload)));
         setConversionProgress("");
@@ -300,12 +341,50 @@ export default function App() {
     return () => {
       worker.terminate();
       pendingRef.current.clear();
+      for (const url of streamUrlsRef.current) URL.revokeObjectURL(url);
       if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
       for (const url of shootoutUrlsRef.current) URL.revokeObjectURL(url);
       for (const url of dialogueUrlsRef.current) URL.revokeObjectURL(url);
       if (sceneAudioUrlRef.current) URL.revokeObjectURL(sceneAudioUrlRef.current);
     };
   }, []);
+
+  async function queueNextStreamChunk() {
+    const audio = streamAudioRef.current;
+    if (!audio || streamPlaybackBusyRef.current) return;
+    const nextUrl = streamQueueRef.current.shift();
+    if (!nextUrl) return;
+    streamPlaybackBusyRef.current = true;
+    audio.src = nextUrl;
+    try {
+      await audio.play();
+    } catch {
+      setStreamingProgress("Stream chunk ready. Press play on the example player to continue.");
+    }
+  }
+
+  function handleStreamAudioEnded() {
+    setStreamingPlayedChunks((value) => value + 1);
+    streamPlaybackBusyRef.current = false;
+    queueNextStreamChunk();
+  }
+
+  function resetStreamedExample() {
+    streamRequestIdRef.current = "";
+    streamQueueRef.current = [];
+    streamPlaybackBusyRef.current = false;
+    for (const url of streamUrlsRef.current) URL.revokeObjectURL(url);
+    streamUrlsRef.current = [];
+    if (streamAudioRef.current) {
+      streamAudioRef.current.pause();
+      streamAudioRef.current.removeAttribute("src");
+      streamAudioRef.current.load();
+    }
+    setStreamingChunks([]);
+    setStreamingFinalUrl("");
+    setStreamingPlayedChunks(0);
+    setStreamingProgress("");
+  }
 
   async function checkWebgpuReadiness() {
     if (typeof window === "undefined") {
@@ -360,7 +439,7 @@ export default function App() {
     });
   }
 
-  function requestGenerate({ textValue, voiceValue, speedValue, requestId }) {
+  function requestGenerate({ textValue, voiceValue, speedValue, requestId, stream = false }) {
     return new Promise((resolve) => {
       pendingRef.current.set(requestId, resolve);
       workerRef.current.postMessage({
@@ -369,7 +448,8 @@ export default function App() {
           text: textValue,
           voice: voiceValue,
           speed: speedValue,
-          requestId
+          requestId,
+          stream
         }
       });
     });
@@ -416,6 +496,42 @@ export default function App() {
     setLastStats(`${result.samples} samples across ${result.chunks} chunk(s)`);
     setConversionProgress("");
     setStatus("ready");
+  }
+
+  async function runStreamedExample() {
+    if (!workerRef.current || !canGenerate || !modelInitialized) {
+      setError("Initialize Model first.");
+      return;
+    }
+    resetStreamedExample();
+    setStreamingLoading(true);
+    setStatus("generating");
+    setError("");
+    const requestId = `stream-${Date.now()}`;
+    streamRequestIdRef.current = requestId;
+    setStreamingProgress("Starting streamed render");
+    const result = await requestGenerate({
+      textValue: text,
+      voiceValue: voice,
+      speedValue: speed,
+      requestId,
+      stream: true
+    });
+    if (result?.error) {
+      setError(result.error);
+      setStreamingLoading(false);
+      setStreamingProgress("");
+      setStatus("ready");
+      return;
+    }
+    const blob = new Blob([result.wavBuffer], { type: "audio/wav" });
+    const url = URL.createObjectURL(blob);
+    streamUrlsRef.current.push(url);
+    setStreamingFinalUrl(url);
+    setStreamingProgress(`Stream complete: ${result.chunks} chunks`);
+    setStreamingLoading(false);
+    setStatus("ready");
+    streamRequestIdRef.current = "";
   }
 
   async function runVoiceShootout() {
@@ -834,6 +950,70 @@ export default function App() {
             </div>
           )}
         </div>
+      </section>
+
+      <section className="mt-4 space-y-4 rounded-2xl border border-amber-400/30 bg-slate-900/70 p-5">
+        <h3 className="text-lg font-semibold text-white">Streamed Audio Example</h3>
+        <p className="text-xs text-slate-400">
+          This test queues each rendered chunk into a live player as soon as the worker finishes it, then also saves the
+          full combined WAV at the end.
+        </p>
+
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={runStreamedExample}
+            disabled={!canGenerate || !modelInitialized || streamingLoading}
+            className="rounded-xl border border-amber-400/70 px-4 py-2 text-sm font-semibold text-amber-200 hover:border-amber-300 disabled:opacity-60"
+          >
+            {streamingLoading ? "Streaming..." : "Run Streamed Example"}
+          </button>
+          <button
+            onClick={resetStreamedExample}
+            className="rounded-xl border border-slate-500 px-4 py-2 text-sm text-slate-200 hover:border-cyan-300"
+          >
+            Reset Stream
+          </button>
+        </div>
+
+        <p className="text-xs text-slate-300">
+          Played chunks: <strong>{streamingPlayedChunks}</strong> / <strong>{streamingChunks.length}</strong>
+        </p>
+        {streamingProgress ? <p className="text-xs text-amber-200">{streamingProgress}</p> : null}
+
+        <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-3">
+          <p className="mb-2 text-sm text-slate-200">Chunk Player</p>
+          <audio ref={streamAudioRef} controls className="w-full" onEnded={handleStreamAudioEnded} />
+        </div>
+
+        {streamingFinalUrl ? (
+          <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-3">
+            <p className="mb-2 text-sm text-slate-200">Combined Stream Output</p>
+            <audio controls className="w-full" src={streamingFinalUrl} />
+            <a
+              className="mt-3 inline-block text-sm text-amber-300 underline"
+              href={streamingFinalUrl}
+              download="kittentts-streamed.wav"
+            >
+              Download Combined WAV
+            </a>
+          </div>
+        ) : null}
+
+        {streamingChunks.length > 0 ? (
+          <div className="grid gap-3">
+            {streamingChunks.map((chunk) => (
+              <div key={chunk.id} className="rounded-xl border border-slate-700 bg-slate-950/70 p-3">
+                <p className="text-sm text-slate-200">
+                  Chunk {chunk.chunkIndex + 1}/{chunk.totalChunks}
+                </p>
+                <p className="mb-2 text-xs text-slate-400">{chunk.text}</p>
+                <audio controls className="w-full" src={chunk.url} />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-slate-300">No streamed chunks yet.</p>
+        )}
       </section>
 
       <section className="mt-4 space-y-4 rounded-2xl border border-fuchsia-400/30 bg-slate-900/70 p-5">

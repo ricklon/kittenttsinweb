@@ -200,6 +200,8 @@ export class KittenOnnxEngine {
 
     const rendered = [];
     const onProgress = typeof options.onProgress === "function" ? options.onProgress : null;
+    const onChunkAudio = typeof options.onChunkAudio === "function" ? options.onChunkAudio : null;
+    const sampleRate = cfg.sampleRate || 24000;
     for (let i = 0; i < chunks.length; i += 1) {
       const chunk = chunks[i];
       if (onProgress) {
@@ -231,7 +233,17 @@ export class KittenOnnxEngine {
       if (!out?.data) throw new Error("Model output did not contain audio tensor data.");
       const trim = Number(cfg.trimTailSamples ?? 5000);
       const raw = new Float32Array(out.data);
-      rendered.push(sanitizeAudio(trimTailSamples(raw, trim)));
+      const chunkAudio = sanitizeAudio(trimTailSamples(raw, trim));
+      rendered.push(chunkAudio);
+      if (onChunkAudio) {
+        onChunkAudio({
+          audio: chunkAudio,
+          sampleRate,
+          chunkIndex: i,
+          totalChunks: chunks.length,
+          text: chunk
+        });
+      }
       if (onProgress) {
         onProgress({
           stage: "chunk_done",
@@ -242,7 +254,7 @@ export class KittenOnnxEngine {
     }
 
     return {
-      sampleRate: cfg.sampleRate || 24000,
+      sampleRate,
       audio: concatFloat32(rendered),
       chunks: chunks.length
     };
